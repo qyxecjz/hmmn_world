@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>hmmn・WorldTour (Final Edition)</title>
+    <title>hmmn・WorldTour (BGM Fixed)</title>
     <style>
         body {
             margin: 0;
@@ -33,7 +33,7 @@
             image-rendering: pixelated;
         }
 
-        /* --- モバイル用操作ボタン --- */
+        /* --- モバイル操作パネル --- */
         #controls {
             position: absolute;
             bottom: 5%;
@@ -44,16 +44,15 @@
             box-sizing: border-box;
             pointer-events: none;
             user-select: none;
-            -webkit-user-select: none;
         }
         .left-group, .right-group {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             pointer-events: auto;
         }
         .button {
-            width: 80px;
-            height: 80px;
+            width: 75px;
+            height: 75px;
             background: rgba(255, 255, 255, 0.2);
             border: 2px solid rgba(255, 255, 255, 0.4);
             border-radius: 50%;
@@ -62,7 +61,7 @@
             align-items: center;
             color: white;
             font-weight: bold;
-            font-size: 18px;
+            font-size: 16px;
             touch-action: none;
         }
         .button:active {
@@ -70,11 +69,6 @@
             transform: scale(0.9);
         }
         #btn-shift { background: rgba(255, 100, 100, 0.3); }
-
-        /* PC等、タッチデバイスでない場合はボタンを少し薄くする */
-        @media (pointer: fine) {
-            .button { opacity: 0.5; }
-        }
     </style>
 </head>
 <body>
@@ -105,23 +99,27 @@ canvas.height = 1080;
 let currentStageIndex = 0;
 const keys = { a: false, d: false, w: false, space: false, shift: false };
 
-// --- 音声設定 ---
-const bgmNormal = new Audio('bgm.mp3'); bgmNormal.loop = true;
-const bgmStage5 = new Audio('bgm5.mp3'); bgmStage5.loop = true;
-const bgmWiiU = new Audio('WiiU.mp3'); bgmWiiU.loop = true;
-const doorSE = new Audio('door.mp3'); 
+// --- 音声設定（preloadを追加） ---
+const bgmNormal = new Audio('bgm.mp3'); bgmNormal.loop = true; bgmNormal.preload = "auto";
+const bgmStage5 = new Audio('bgm5.mp3'); bgmStage5.loop = true; bgmStage5.preload = "auto";
+const bgmWiiU = new Audio('WiiU.mp3'); bgmWiiU.loop = true; bgmWiiU.preload = "auto";
+const doorSE = new Audio('door.mp3'); doorSE.preload = "auto";
 
 let isMusicStarted = false;
+let currentPlayingBGM = null;
 
-// モバイル用：全音源を一度にアンロックする関数
-function unlockAudio() {
+// モバイル制限を解除するため、全音源を個別にプレイ状態にする
+async function unlockAudio() {
     const allSounds = [bgmNormal, bgmStage5, bgmWiiU, doorSE];
-    allSounds.forEach(sound => {
-        sound.play().then(() => {
+    for (let sound of allSounds) {
+        try {
+            await sound.play();
             sound.pause();
             sound.currentTime = 0;
-        }).catch(e => console.log("Unlock waiting..."));
-    });
+        } catch (e) {
+            console.log("Audio unlock error:", e);
+        }
+    }
 }
 
 // --- 画像読み込み ---
@@ -140,13 +138,12 @@ bgSources.forEach((src) => {
     backgroundImages.push(img);
 });
 
-// --- キャラクター・オブジェクト ---
+// --- プレイヤー・オブジェクト ---
 const player = {
     x: canvas.width / 2,
     y: 650,
     width: 200,
     height: 200,
-    speed: 2,
     dy: 0,
     jumpPowerLimit: -15, 
     gravity: 0.5,
@@ -158,22 +155,12 @@ const door = { x: 0, y: 0, width: 160, height: 180, visible: false, appearanceCh
 const item1 = { x: 0, y: 0, width: 100, height: 100, visible: false, appearanceChance: 0.4 };
 const item2 = { x: 0, y: 0, width: 100, height: 100, visible: false, appearanceChance: 0.3 };
 
-// --- 背景エフェクト ---
-const snowflakes = [];
-for (let i = 0; i < 200; i++) {
-    snowflakes.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, radius: Math.random() * 4 + 1, speed: Math.random() * 2 + 1, wind: Math.random() * 1 - 0.5 });
-}
-const stars = [];
-for (let i = 0; i < 150; i++) {
-    stars.push({ x: Math.random() * canvas.width, y: Math.random() * (canvas.height * 0.6), radius: Math.random() * 2 + 1, alpha: Math.random(), flickerSpeed: Math.random() * 0.02 + 0.01 });
-}
-
-// --- 入力処理 ---
-function startInteraction() {
+// --- 入力処理の統合 ---
+async function startInteraction() {
     if (!isMusicStarted) {
-        unlockAudio(); // モバイルBGM制限解除
-        handleMusicTransition();
         isMusicStarted = true;
+        await unlockAudio(); 
+        handleMusicTransition();
     }
 }
 
@@ -207,26 +194,31 @@ const setupTouchButton = (id, keyName) => {
         keys[keyName] = false;
     });
 };
-
 setupTouchButton('btn-left', 'a');
 setupTouchButton('btn-right', 'd');
 setupTouchButton('btn-up', 'w');
 setupTouchButton('btn-space', 'space');
 setupTouchButton('btn-shift', 'shift');
 
-// --- 音楽制御 ---
+// --- 音楽切り替え（ここを強化） ---
 function handleMusicTransition() {
-    // 全てのBGMを一旦停止
-    [bgmNormal, bgmStage5, bgmWiiU].forEach(s => s.pause());
-
     let targetBGM;
-    if (currentStageIndex === 4) targetBGM = bgmStage5;
-    else if (currentStageIndex === 5) targetBGM = bgmWiiU;
+    if (currentStageIndex === 4) targetBGM = bgmStage5; // bg5.pngの時
+    else if (currentStageIndex === 5) targetBGM = bgmWiiU;  // bg6.pngの時
     else targetBGM = bgmNormal;
 
+    // すでに同じ曲が流れているならリセットしない
+    if (currentPlayingBGM === targetBGM) return;
+
+    // すべて停止
+    [bgmNormal, bgmStage5, bgmWiiU].forEach(s => {
+        s.pause();
+        s.currentTime = 0;
+    });
+
     if (isMusicStarted) {
-        targetBGM.currentTime = 0;
-        targetBGM.play().catch(e => console.log("Playback blocked: " + e));
+        targetBGM.play().catch(e => console.log("BGM Play Error: ", e));
+        currentPlayingBGM = targetBGM;
     }
 }
 
@@ -301,7 +293,7 @@ function update() {
         if (currentStageIndex === 0) currentStageIndex = (Math.random() < 0.1) ? 4 : 3;
         else if (currentStageIndex === 4 || currentStageIndex === 5) currentStageIndex = 3;
         else currentStageIndex--;
-        player.x = canvas.width - 50;
+        player.x = canvas.width - player.width - 50;
     }
     if (oldIndex !== currentStageIndex) { 
         handleMusicTransition(); 
@@ -309,19 +301,25 @@ function update() {
     }
 }
 
+// エフェクト用データ
+const snowflakes = [];
+for (let i = 0; i < 150; i++) snowflakes.push({ x: Math.random() * 1920, y: Math.random() * 1080, r: Math.random() * 4 + 1, s: Math.random() * 2 + 1 });
+const stars = [];
+for (let i = 0; i < 100; i++) stars.push({ x: Math.random() * 1920, y: Math.random() * 600, r: Math.random() * 2, a: Math.random() });
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const bg = backgroundImages[currentStageIndex];
     if (bg && bg.complete) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
-    if (currentStageIndex === 0 || currentStageIndex === 3) {
-        ctx.save(); ctx.fillStyle = "white";
-        for (let s of stars) { s.alpha += s.flickerSpeed; ctx.globalAlpha = Math.abs(Math.sin(s.alpha)); ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fill(); }
-        ctx.restore();
+    // ステージ固有エフェクト
+    if (currentStageIndex === 1) { // 雪
+        ctx.fillStyle = "white";
+        snowflakes.forEach(s => { ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); s.y += s.s; if (s.y > 1080) s.y = -10; });
     }
-    if (currentStageIndex === 1) {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-        for (let s of snowflakes) { ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fill(); s.y += s.speed; s.x += s.wind; if (s.y > canvas.height) s.y = -10; }
+    if (currentStageIndex === 0 || currentStageIndex === 3) { // 星
+        ctx.fillStyle = "white";
+        stars.forEach(s => { ctx.globalAlpha = Math.abs(Math.sin(s.a += 0.01)); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1; });
     }
 
     if (door.visible && doorImg.complete) {
