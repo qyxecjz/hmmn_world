@@ -2,7 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>hmmn・WorldTour</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>hmmn・WorldTour (Mobile Optimized)</title>
     <style>
         body {
             margin: 0;
@@ -14,6 +15,8 @@
             height: 100vh;
             overflow: hidden;
             font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
+            /* スマホでの誤操作（ズームやスクロール）を防止 */
+            touch-action: none; 
         }
         #game-container {
             position: relative;
@@ -22,6 +25,7 @@
             max-height: 100vh;
             max-width: 177.78vh;
             box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            background: #222;
         }
         canvas {
             width: 100%;
@@ -29,12 +33,63 @@
             display: block;
             image-rendering: pixelated;
         }
+
+        /* --- モバイル用操作ボタンのスタイル --- */
+        #controls {
+            position: absolute;
+            bottom: 5%;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 5%;
+            box-sizing: border-box;
+            pointer-events: none; /* ボタン以外はクリックを透過 */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .left-group, .right-group {
+            display: flex;
+            gap: 20px;
+            pointer-events: auto;
+        }
+        .button {
+            width: 70px;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+            touch-action: none;
+        }
+        .button:active {
+            background: rgba(255, 255, 255, 0.5);
+            transform: scale(0.95);
+        }
+        /* ダッシュボタンだけ色を変える */
+        #btn-shift { background: rgba(255, 100, 100, 0.2); }
     </style>
 </head>
 <body>
 
     <div id="game-container">
         <canvas id="gameCanvas"></canvas>
+        
+        <div id="controls">
+            <div class="left-group">
+                <div id="btn-left" class="button">←</div>
+                <div id="btn-right" class="button">→</div>
+            </div>
+            <div class="right-group">
+                <div id="btn-shift" class="button">Dash</div>
+                <div id="btn-up" class="button">W</div>
+                <div id="btn-space" class="button">Jump</div>
+            </div>
+        </div>
     </div>
 
 <script>
@@ -47,16 +102,15 @@ canvas.height = 1080;
 let currentStageIndex = 0;
 const keys = { a: false, d: false, w: false, space: false, shift: false };
 
-const bgmNormal = new Audio('bgm.mp3'); 
-bgmNormal.loop = true;
-const bgmStage5 = new Audio('bgm5.mp3'); 
-bgmStage5.loop = true;
-const bgmWiiU = new Audio('WiiU.mp3'); 
-bgmWiiU.loop = true;
+// --- 音声設定 ---
+const bgmNormal = new Audio('bgm.mp3'); bgmNormal.loop = true;
+const bgmStage5 = new Audio('bgm5.mp3'); bgmStage5.loop = true;
+const bgmWiiU = new Audio('WiiU.mp3'); bgmWiiU.loop = true;
 const doorSE = new Audio('door.mp3'); 
 
 let isMusicStarted = false;
 
+// --- 画像読み込み ---
 const playerImg1 = new Image(); playerImg1.src = 'ham.jpg'; 
 const playerImg2 = new Image(); playerImg2.src = 'ham2.jpg'; 
 const playerImg3 = new Image(); playerImg3.src = 'ham3.jpg'; 
@@ -72,6 +126,7 @@ bgSources.forEach((src) => {
     backgroundImages.push(img);
 });
 
+// --- キャラクター・オブジェクト ---
 const player = {
     x: canvas.width / 2,
     y: 650,
@@ -79,7 +134,7 @@ const player = {
     height: 200,
     speed: 2,
     dy: 0,
-    jumpPowerLimit: -10, // 最大上昇速度
+    jumpPowerLimit: -15, 
     gravity: 0.5,
     isGround: false,
     currentImg: playerImg1 
@@ -89,6 +144,7 @@ const door = { x: 0, y: 0, width: 160, height: 180, visible: false, appearanceCh
 const item1 = { x: 0, y: 0, width: 100, height: 100, visible: false, appearanceChance: 0.4 };
 const item2 = { x: 0, y: 0, width: 100, height: 100, visible: false, appearanceChance: 0.3 };
 
+// --- エフェクト ---
 const snowflakes = [];
 for (let i = 0; i < 200; i++) {
     snowflakes.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, radius: Math.random() * 4 + 1, speed: Math.random() * 2 + 1, wind: Math.random() * 1 - 0.5 });
@@ -98,6 +154,7 @@ for (let i = 0; i < 150; i++) {
     stars.push({ x: Math.random() * canvas.width, y: Math.random() * (canvas.height * 0.6), radius: Math.random() * 2 + 1, alpha: Math.random(), flickerSpeed: Math.random() * 0.02 + 0.01 });
 }
 
+// --- キーボード入力 ---
 window.addEventListener('keydown', e => {
     if (!isMusicStarted) { handleMusicTransition(); isMusicStarted = true; }
     const key = e.key.toLowerCase();
@@ -116,11 +173,34 @@ window.addEventListener('keyup', e => {
     if (e.code === 'Space') keys.space = false;
 });
 
+// --- スマホ用タッチ入力 ---
+const setupTouchButton = (id, keyName) => {
+    const btn = document.getElementById(id);
+    const startAction = (e) => {
+        e.preventDefault();
+        if (!isMusicStarted) { handleMusicTransition(); isMusicStarted = true; }
+        keys[keyName] = true;
+    };
+    const endAction = (e) => {
+        e.preventDefault();
+        keys[keyName] = false;
+    };
+    btn.addEventListener('touchstart', startAction);
+    btn.addEventListener('touchend', endAction);
+};
+
+setupTouchButton('btn-left', 'a');
+setupTouchButton('btn-right', 'd');
+setupTouchButton('btn-up', 'w');
+setupTouchButton('btn-space', 'space');
+setupTouchButton('btn-shift', 'shift');
+
+// --- 音楽制御 ---
 function handleMusicTransition() {
     const stopAllBGM = () => { bgmNormal.pause(); bgmStage5.pause(); bgmWiiU.pause(); };
-    if (currentStageIndex === 4) { stopAllBGM(); bgmStage5.currentTime = 0; bgmStage5.play().catch(e => {}); } 
-    else if (currentStageIndex === 5) { stopAllBGM(); bgmWiiU.currentTime = 0; bgmWiiU.play().catch(e => {}); } 
-    else { if (bgmNormal.paused) { stopAllBGM(); bgmNormal.play().catch(e => {}); } }
+    if (currentStageIndex === 4) { stopAllBGM(); bgmStage5.currentTime = 0; bgmStage5.play().catch(e=>{}); } 
+    else if (currentStageIndex === 5) { stopAllBGM(); bgmWiiU.currentTime = 0; bgmWiiU.play().catch(e=>{}); } 
+    else { if (bgmNormal.paused) { stopAllBGM(); bgmNormal.play().catch(e=>{}); } }
 }
 
 function resetObjects() {
@@ -152,22 +232,20 @@ function checkCollision(obj) {
 }
 
 function update() {
-    const moveSpeed = keys.shift ? 5 : 2;
+    const moveSpeed = keys.shift ? 10 : 4;
     if (keys.a) player.x -= moveSpeed;
     if (keys.d) player.x += moveSpeed;
 
     let groundLevel = [0, 1, 3].includes(currentStageIndex) ? 650 : 750;
 
-    // ジャンプ開始
+    // ジャンプ処理
     if (keys.space && player.isGround) {
-        player.dy = -8; // 最初のジャンプ初速
+        player.dy = -10; 
         player.isGround = false;
     }
-
-    // 長押しによる追加上昇
     if (keys.space && !player.isGround && player.dy < 0) {
-        player.dy -= 0.8; // Spaceを押している間さらに加速
-        if (player.dy < player.jumpPowerLimit) player.dy = player.jumpPowerLimit; // -20でストップ
+        player.dy -= 0.6; // ジャンプ長押しによる上昇
+        if (player.dy < player.jumpPowerLimit) player.dy = player.jumpPowerLimit;
     }
 
     player.dy += player.gravity;
@@ -183,6 +261,7 @@ function update() {
         currentStageIndex = 5; door.visible = false; player.x = canvas.width / 2; handleMusicTransition(); 
     }
 
+    // ステージ移動
     let oldIndex = currentStageIndex;
     if (player.x > canvas.width) {
         if (currentStageIndex === 3) currentStageIndex = (Math.random() < 0.4) ? 4 : 0;
@@ -203,8 +282,8 @@ function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const bg = backgroundImages[currentStageIndex];
     if (bg && bg.complete) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-    else { ctx.fillStyle = "#222"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
 
+    // 特殊エフェクト
     if (currentStageIndex === 0 || currentStageIndex === 3) {
         ctx.save(); ctx.fillStyle = "white";
         for (let s of stars) { s.alpha += s.flickerSpeed; ctx.globalAlpha = Math.abs(Math.sin(s.alpha)); ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fill(); }
@@ -215,28 +294,24 @@ function draw() {
         for (let s of snowflakes) { ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); ctx.fill(); s.y += s.speed; s.x += s.wind; if (s.y > canvas.height) s.y = -10; }
     }
 
+    // オブジェクト描画
     if (door.visible) {
         if (doorImg.complete) ctx.drawImage(doorImg, door.x, door.y, door.width, door.height);
-        else { ctx.fillStyle = "#5D4037"; ctx.fillRect(door.x, door.y, door.width, door.height); }
         ctx.fillStyle = "white"; ctx.font = "bold 30px Arial"; ctx.textAlign = "center"; ctx.fillText("こ↑こ↓", door.x + door.width/2, door.y - 20);
     }
+    if (item1.visible && itemImg1.complete) ctx.drawImage(itemImg1, item1.x, item1.y, item1.width, item1.height);
+    if (item2.visible && itemImg2.complete) ctx.drawImage(itemImg2, item2.x, item2.y, item2.width, item2.height);
 
-    if (item1.visible) {
-        if (itemImg1.complete) ctx.drawImage(itemImg1, item1.x, item1.y, item1.width, item1.height);
-        else { ctx.fillStyle = "yellow"; ctx.fillRect(item1.x, item1.y, item1.width, item1.height); }
-    }
-    if (item2.visible) {
-        if (itemImg2.complete) ctx.drawImage(itemImg2, item2.x, item2.y, item2.width, item2.height);
-        else { ctx.fillStyle = "cyan"; ctx.fillRect(item2.x, item2.y, item2.width, item2.height); }
-    }
-
+    // プレイヤー描画
     if (player.currentImg.complete) ctx.drawImage(player.currentImg, player.x, player.y, player.width, player.height);
-    else { ctx.fillStyle = "red"; ctx.fillRect(player.x, player.y, player.width, player.height); }
 }
 
 function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
-resetObjects();
-gameLoop();
+
+window.onload = () => {
+    resetObjects();
+    gameLoop();
+};
 </script>
 </body>
 </html>
