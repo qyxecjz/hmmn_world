@@ -3,341 +3,202 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>hmmn・WorldTour (BGM Fixed)</title>
+    <title>hmmn・WorldTour (iPhone Fixed)</title>
     <style>
         body {
-            margin: 0;
-            padding: 0;
-            background-color: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-            font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
-            touch-action: none; 
+            margin: 0; padding: 0; background-color: #000;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden; touch-action: none;
         }
         #game-container {
-            position: relative;
-            width: 100vw;
-            height: 56.25vw;
-            max-height: 100vh;
-            max-width: 177.78vh;
-            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            position: relative; width: 100vw; height: 56.25vw;
+            max-height: 100vh; max-width: 177.78vh;
             background: #222;
         }
-        canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-            image-rendering: pixelated;
-        }
-
-        /* --- モバイル操作パネル --- */
+        canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+        
+        /* 操作パネル */
         #controls {
-            position: absolute;
-            bottom: 5%;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            padding: 0 5%;
-            box-sizing: border-box;
-            pointer-events: none;
-            user-select: none;
+            position: absolute; bottom: 5%; width: 100%;
+            display: flex; justify-content: space-between;
+            padding: 0 5%; box-sizing: border-box; pointer-events: none;
         }
-        .left-group, .right-group {
-            display: flex;
-            gap: 15px;
-            pointer-events: auto;
-        }
+        .left-group, .right-group { display: flex; gap: 15px; pointer-events: auto; }
         .button {
-            width: 75px;
-            height: 75px;
-            background: rgba(255, 255, 255, 0.2);
-            border: 2px solid rgba(255, 255, 255, 0.4);
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            font-weight: bold;
-            font-size: 16px;
-            touch-action: none;
+            width: 70px; height: 70px; background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.4); border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            color: white; font-weight: bold; touch-action: none;
         }
-        .button:active {
-            background: rgba(255, 255, 255, 0.5);
-            transform: scale(0.9);
-        }
-        #btn-shift { background: rgba(255, 100, 100, 0.3); }
+        .button:active { background: rgba(255,255,255,0.5); transform: scale(0.9); }
     </style>
 </head>
 <body>
 
-    <div id="game-container">
-        <canvas id="gameCanvas"></canvas>
-        
-        <div id="controls">
-            <div class="left-group">
-                <div id="btn-left" class="button">←</div>
-                <div id="btn-right" class="button">→</div>
-            </div>
-            <div class="right-group">
-                <div id="btn-shift" class="button">Dash</div>
-                <div id="btn-up" class="button">↑</div>
-                <div id="btn-space" class="button">Jump</div>
-            </div>
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="controls">
+        <div class="left-group">
+            <div id="btn-left" class="button">←</div>
+            <div id="btn-right" class="button">→</div>
+        </div>
+        <div class="right-group">
+            <div id="btn-shift" class="button">Dash</div>
+            <div id="btn-up" class="button">W</div>
+            <div id="btn-space" class="button">Jump</div>
         </div>
     </div>
+</div>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-
-canvas.width = 1920;
-canvas.height = 1080;
+canvas.width = 1920; canvas.height = 1080;
 
 let currentStageIndex = 0;
 const keys = { a: false, d: false, w: false, space: false, shift: false };
 
-// --- 音声設定（preloadを追加） ---
-const bgmNormal = new Audio('bgm.mp3'); bgmNormal.loop = true; bgmNormal.preload = "auto";
-const bgmStage5 = new Audio('bgm5.mp3'); bgmStage5.loop = true; bgmStage5.preload = "auto";
-const bgmWiiU = new Audio('WiiU.mp3'); bgmWiiU.loop = true; bgmWiiU.preload = "auto";
-const doorSE = new Audio('door.mp3'); doorSE.preload = "auto";
+// --- 音声管理 (iPhone対策: 配列で一括管理) ---
+const sounds = {
+    normal: new Audio('bgm.mp3'),
+    stage5: new Audio('bgm5.mp3'),
+    wiiu: new Audio('WiiU.mp3'),
+    door: new Audio('door.mp3')
+};
 
-let isMusicStarted = false;
-let currentPlayingBGM = null;
+// 全ての音声をループ設定にする
+sounds.normal.loop = true;
+sounds.stage5.loop = true;
+sounds.wiiu.loop = true;
 
-// モバイル制限を解除するため、全音源を個別にプレイ状態にする
-async function unlockAudio() {
-    const allSounds = [bgmNormal, bgmStage5, bgmWiiU, doorSE];
-    for (let sound of allSounds) {
-        try {
-            await sound.play();
-            sound.pause();
-            sound.currentTime = 0;
-        } catch (e) {
-            console.log("Audio unlock error:", e);
-        }
+let isAudioUnlocked = false;
+
+// iPhone向けの強力なアンロック関数
+function unlockAllAudio() {
+    if (isAudioUnlocked) return;
+    
+    // 全ての音源を同時に一瞬だけ再生する
+    Object.values(sounds).forEach(s => {
+        s.play().then(() => {
+            s.pause();
+            s.currentTime = 0;
+        }).catch(e => console.log("Unlock error"));
+    });
+    isAudioUnlocked = true;
+}
+
+// --- 音楽切り替えロジック ---
+function playBGM() {
+    // 全BGMを一時停止
+    [sounds.normal, sounds.stage5, sounds.wiiu].forEach(s => {
+        s.pause();
+    });
+
+    let target;
+    if (currentStageIndex === 4) target = sounds.stage5;
+    else if (currentStageIndex === 5) target = sounds.wiiu;
+    else target = sounds.normal;
+
+    // iPhoneでは play() の前に currentTime をいじると失敗することがあるため
+    // play() を呼んでからリセットをかける
+    const playPromise = target.play();
+    if (playPromise !== undefined) {
+        playPromise.then(() => {
+            // 再生成功
+        }).catch(error => {
+            console.log("iPhone auto-play blocked. Waiting for touch.");
+        });
     }
 }
 
 // --- 画像読み込み ---
-const playerImg1 = new Image(); playerImg1.src = 'ham.jpg'; 
-const playerImg2 = new Image(); playerImg2.src = 'ham2.jpg'; 
-const playerImg3 = new Image(); playerImg3.src = 'ham3.jpg'; 
-const itemImg1 = new Image(); itemImg1.src = 'item.jpg'; 
-const itemImg2 = new Image(); itemImg2.src = 'item2.jpg'; 
-const doorImg = new Image(); doorImg.src = 'door.jpg'; 
+const playerImgs = [new Image(), new Image(), new Image()];
+playerImgs[0].src = 'ham.jpg'; playerImgs[1].src = 'ham2.jpg'; playerImgs[2].src = 'ham3.jpg';
+const itemImgs = [new Image(), new Image()];
+itemImgs[0].src = 'item.jpg'; itemImgs[1].src = 'item2.jpg';
+const doorImg = new Image(); doorImg.src = 'door.jpg';
 
-const backgroundImages = [];
-const bgSources = ['bg1.png', 'bg2.png', 'bg3.png', 'bg4.png', 'bg5.png', 'bg6.png'];
-bgSources.forEach((src) => {
-    const img = new Image();
-    img.src = src;
-    backgroundImages.push(img);
+const bgImgs = [];
+['bg1.png','bg2.png','bg3.png','bg4.png','bg5.png','bg6.png'].forEach(src => {
+    const img = new Image(); img.src = src; bgImgs.push(img);
 });
 
-// --- プレイヤー・オブジェクト ---
-const player = {
-    x: canvas.width / 2,
-    y: 650,
-    width: 200,
-    height: 200,
-    dy: 0,
-    jumpPowerLimit: -15, 
-    gravity: 0.5,
-    isGround: false,
-    currentImg: playerImg1 
+// --- ゲームオブジェクト ---
+const player = { x: 960, y: 650, width: 200, height: 200, dy: 0, gravity: 0.5, isGround: false, img: playerImgs[0] };
+const door = { x: 0, y: 0, width: 160, height: 180, visible: false };
+const item1 = { x: 0, y: 0, width: 100, height: 100, visible: false };
+const item2 = { x: 0, y: 0, width: 100, height: 100, visible: false };
+
+// --- 入力イベント ---
+const handleInteraction = () => {
+    if (!isAudioUnlocked) {
+        unlockAllAudio();
+        playBGM();
+    }
 };
 
-const door = { x: 0, y: 0, width: 160, height: 180, visible: false, appearanceChance: 0.3 };
-const item1 = { x: 0, y: 0, width: 100, height: 100, visible: false, appearanceChance: 0.4 };
-const item2 = { x: 0, y: 0, width: 100, height: 100, visible: false, appearanceChance: 0.3 };
-
-// --- 入力処理の統合 ---
-async function startInteraction() {
-    if (!isMusicStarted) {
-        isMusicStarted = true;
-        await unlockAudio(); 
-        handleMusicTransition();
-    }
-}
-
-window.addEventListener('keydown', e => {
-    startInteraction();
-    const key = e.key.toLowerCase();
-    if (key === 'a') keys.a = true;
-    if (key === 'd') keys.d = true;
-    if (key === 'w') keys.w = true;
-    if (key === 'shift') keys.shift = true;
-    if (e.code === 'Space') keys.space = true;
+window.addEventListener('keydown', (e) => {
+    handleInteraction();
+    const k = e.key.toLowerCase();
+    if(k==='a') keys.a=true; if(k==='d') keys.d=true; if(k==='w') keys.w=true;
+    if(k==='shift') keys.shift=true; if(e.code==='Space') keys.space=true;
 });
-window.addEventListener('keyup', e => {
-    const key = e.key.toLowerCase();
-    if (key === 'a') keys.a = false;
-    if (key === 'd') keys.d = false;
-    if (key === 'w') keys.w = false;
-    if (key === 'shift') keys.shift = false;
-    if (e.code === 'Space') keys.space = false;
+window.addEventListener('keyup', (e) => {
+    const k = e.key.toLowerCase();
+    if(k==='a') keys.a=false; if(k==='d') keys.d=false; if(k==='w') keys.w=false;
+    if(k==='shift') keys.shift=false; if(e.code==='Space') keys.space=false;
 });
 
-const setupTouchButton = (id, keyName) => {
-    const btn = document.getElementById(id);
-    btn.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        startInteraction();
-        keys[keyName] = true;
-    });
-    btn.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        keys[keyName] = false;
-    });
+const setupBtn = (id, key) => {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', (e) => { e.preventDefault(); handleInteraction(); keys[key]=true; });
+    el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key]=false; });
 };
-setupTouchButton('btn-left', 'a');
-setupTouchButton('btn-right', 'd');
-setupTouchButton('btn-up', 'w');
-setupTouchButton('btn-space', 'space');
-setupTouchButton('btn-shift', 'shift');
-
-// --- 音楽切り替え（ここを強化） ---
-function handleMusicTransition() {
-    let targetBGM;
-    if (currentStageIndex === 4) targetBGM = bgmStage5; // bg5.pngの時
-    else if (currentStageIndex === 5) targetBGM = bgmWiiU;  // bg6.pngの時
-    else targetBGM = bgmNormal;
-
-    // すでに同じ曲が流れているならリセットしない
-    if (currentPlayingBGM === targetBGM) return;
-
-    // すべて停止
-    [bgmNormal, bgmStage5, bgmWiiU].forEach(s => {
-        s.pause();
-        s.currentTime = 0;
-    });
-
-    if (isMusicStarted) {
-        targetBGM.play().catch(e => console.log("BGM Play Error: ", e));
-        currentPlayingBGM = targetBGM;
-    }
-}
+setupBtn('btn-left','a'); setupBtn('btn-right','d'); setupBtn('btn-up','w');
+setupBtn('btn-space','space'); setupBtn('btn-shift','shift');
 
 function resetObjects() {
-    let ground = [0, 1, 3].includes(currentStageIndex) ? 650 : 750;
-    if (currentStageIndex < 5 && Math.random() < door.appearanceChance) {
-        door.visible = true;
-        door.x = 300 + Math.random() * (canvas.width - 600);
-        door.y = ground + player.height - door.height;
-    } else { door.visible = false; }
-
-    if (Math.random() < item1.appearanceChance) {
-        item1.visible = true;
-        item1.x = 200 + Math.random() * (canvas.width / 2 - 200);
-        item1.y = ground + player.height - item1.height;
-    } else { item1.visible = false; }
-
-    if (Math.random() < item2.appearanceChance) {
-        item2.visible = true;
-        item2.x = canvas.width / 2 + Math.random() * (canvas.width / 2 - 200);
-        item2.y = ground + player.height - item2.height;
-    } else { item2.visible = false; }
-}
-
-function checkCollision(obj) {
-    return player.x < obj.x + obj.width &&
-           player.x + player.width > obj.x &&
-           player.y < obj.y + obj.height &&
-           player.y + player.height > obj.y;
+    let ground = [0,1,3].includes(currentStageIndex) ? 650 : 750;
+    door.visible = (currentStageIndex < 5 && Math.random() < 0.3);
+    if(door.visible) { door.x = 400 + Math.random()*1000; door.y = ground + 200 - 180; }
+    item1.visible = Math.random() < 0.4;
+    if(item1.visible) { item1.x = 200 + Math.random()*600; item1.y = ground + 200 - 100; }
+    item2.visible = Math.random() < 0.3;
+    if(item2.visible) { item2.x = 1100 + Math.random()*600; item2.y = ground + 200 - 100; }
 }
 
 function update() {
-    const moveSpeed = keys.shift ? 10 : 4;
-    if (keys.a) player.x -= moveSpeed;
-    if (keys.d) player.x += moveSpeed;
+    const speed = keys.shift ? 12 : 5;
+    if(keys.a) player.x -= speed; if(keys.d) player.x += speed;
 
-    let groundLevel = [0, 1, 3].includes(currentStageIndex) ? 650 : 750;
+    let ground = [0,1,3].includes(currentStageIndex) ? 650 : 750;
+    if(keys.space && player.isGround) { player.dy = -15; player.isGround = false; }
+    player.dy += player.gravity; player.y += player.dy;
+    if(player.y >= ground) { player.y = ground; player.dy = 0; player.isGround = true; }
 
-    if (keys.space && player.isGround) {
-        player.dy = -10; 
-        player.isGround = false;
-    }
-    if (keys.space && !player.isGround && player.dy < 0) {
-        player.dy -= 0.6; 
-        if (player.dy < player.jumpPowerLimit) player.dy = player.jumpPowerLimit;
-    }
+    const col = (o) => player.x < o.x+o.width && player.x+200 > o.x && player.y < o.y+o.height && player.y+200 > o.y;
+    if(item1.visible && col(item1)) { item1.visible = false; player.img = playerImgs[1]; }
+    if(item2.visible && col(item2)) { item2.visible = false; player.img = playerImgs[2]; }
+    if(door.visible && keys.w && col(door)) { sounds.door.play(); currentStageIndex = 5; player.x = 960; playBGM(); resetObjects(); }
 
-    player.dy += player.gravity;
-    player.y += player.dy;
-
-    if (player.y >= groundLevel) { player.y = groundLevel; player.dy = 0; player.isGround = true; }
-
-    if (item1.visible && checkCollision(item1)) { item1.visible = false; player.currentImg = playerImg2; }
-    if (item2.visible && checkCollision(item2)) { item2.visible = false; player.currentImg = playerImg3; }
-
-    if (door.visible && keys.w && checkCollision(door)) {
-        doorSE.play(); 
-        currentStageIndex = 5; 
-        door.visible = false; 
-        player.x = canvas.width / 2; 
-        handleMusicTransition(); 
-    }
-
-    let oldIndex = currentStageIndex;
-    if (player.x > canvas.width) {
-        if (currentStageIndex === 3) currentStageIndex = (Math.random() < 0.4) ? 4 : 0;
-        else if (currentStageIndex === 4 || currentStageIndex === 5) currentStageIndex = 0;
-        else currentStageIndex++;
-        player.x = -player.width + 50;
-    }
-    if (player.x + player.width < 0) {
-        if (currentStageIndex === 0) currentStageIndex = (Math.random() < 0.1) ? 4 : 3;
-        else if (currentStageIndex === 4 || currentStageIndex === 5) currentStageIndex = 3;
-        else currentStageIndex--;
-        player.x = canvas.width - player.width - 50;
-    }
-    if (oldIndex !== currentStageIndex) { 
-        handleMusicTransition(); 
-        resetObjects(); 
-    }
+    let oldIdx = currentStageIndex;
+    if(player.x > 1920) { currentStageIndex = (currentStageIndex === 3) ? (Math.random()<0.4?4:0) : (currentStageIndex >= 4 ? 0 : currentStageIndex+1); player.x = 0; }
+    if(player.x < -200) { currentStageIndex = (currentStageIndex === 0) ? 3 : (currentStageIndex >= 4 ? 3 : currentStageIndex-1); player.x = 1720; }
+    
+    if(oldIdx !== currentStageIndex) { playBGM(); resetObjects(); }
 }
-
-// エフェクト用データ
-const snowflakes = [];
-for (let i = 0; i < 150; i++) snowflakes.push({ x: Math.random() * 1920, y: Math.random() * 1080, r: Math.random() * 4 + 1, s: Math.random() * 2 + 1 });
-const stars = [];
-for (let i = 0; i < 100; i++) stars.push({ x: Math.random() * 1920, y: Math.random() * 600, r: Math.random() * 2, a: Math.random() });
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const bg = backgroundImages[currentStageIndex];
-    if (bg && bg.complete) ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-
-    // ステージ固有エフェクト
-    if (currentStageIndex === 1) { // 雪
-        ctx.fillStyle = "white";
-        snowflakes.forEach(s => { ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); s.y += s.s; if (s.y > 1080) s.y = -10; });
-    }
-    if (currentStageIndex === 0 || currentStageIndex === 3) { // 星
-        ctx.fillStyle = "white";
-        stars.forEach(s => { ctx.globalAlpha = Math.abs(Math.sin(s.a += 0.01)); ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1; });
-    }
-
-    if (door.visible && doorImg.complete) {
-        ctx.drawImage(doorImg, door.x, door.y, door.width, door.height);
-        ctx.fillStyle = "white"; ctx.font = "bold 30px Arial"; ctx.textAlign = "center"; ctx.fillText("こ↑こ↓", door.x + door.width/2, door.y - 20);
-    }
-    if (item1.visible && itemImg1.complete) ctx.drawImage(itemImg1, item1.x, item1.y, item1.width, item1.height);
-    if (item2.visible && itemImg2.complete) ctx.drawImage(itemImg2, item2.x, item2.y, item2.width, item2.height);
-
-    if (player.currentImg.complete) ctx.drawImage(player.currentImg, player.x, player.y, player.width, player.height);
+    ctx.clearRect(0,0,1920,1080);
+    if(bgImgs[currentStageIndex]) ctx.drawImage(bgImgs[currentStageIndex], 0, 0, 1920, 1080);
+    if(door.visible) ctx.drawImage(doorImg, door.x, door.y, 160, 180);
+    if(item1.visible) ctx.drawImage(itemImgs[0], item1.x, item1.y, 100, 100);
+    if(item2.visible) ctx.drawImage(itemImgs[1], item2.x, item2.y, 100, 100);
+    ctx.drawImage(player.img, player.x, player.y, 200, 200);
 }
 
-function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
-
-window.onload = () => {
-    resetObjects();
-    gameLoop();
-};
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+resetObjects(); loop();
 </script>
 </body>
 </html>
